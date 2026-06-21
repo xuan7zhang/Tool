@@ -1,0 +1,14 @@
+# 5 distractor (fake) tools added to the environment.
+seed: 0
+shuffle_tools: true
+label: distractor_5
+distractor:
+  enabled: true
+  count: 5
+  llm_generate: false        # set true to generate names/descriptions with the agent LLM (cached)
+  cache_path: ducx_noise/cache/distractors.json
+  style: plausible           # plausible | misleading
+unreliable: {enabled: false}
+redundant: {enabled: false}
+description_corruption: {enabled: false}
+schema_noise: {enabled: false}

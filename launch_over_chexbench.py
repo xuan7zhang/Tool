@@ -64,6 +64,30 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--llm-parse", action="store_true")
     parser.add_argument("--disable-tools", action="store_true")
     parser.add_argument("--disable-parallel-tool-calls", action="store_true")
+    parser.add_argument(
+        "--noise-config",
+        default=None,
+        help=(
+            "Optional path to a ducx_noise YAML/JSON config. When omitted, the "
+            "environment is unchanged (default DUCX behaviour)."
+        ),
+    )
+    parser.add_argument(
+        "--noise-metrics",
+        action="store_true",
+        help="After the run, compute noise selection metrics into the log dir (needs --noise-config).",
+    )
+    parser.add_argument(
+        "--capture-logprobs",
+        type=int,
+        default=0,
+        metavar="K",
+        help=(
+            "Opt-in (ducx_entropy): request top-K per-token logprobs (K>=20 "
+            "recommended) and store them in the run-log trace. 0 disables "
+            "(default DUCX behaviour, no logprobs)."
+        ),
+    )
     parser.add_argument("--gemini-native", action="store_true")
     parser.add_argument("--gemini-api-key", type=str, default=None)
     parser.add_argument(
@@ -217,6 +241,13 @@ def serialize_messages(messages):
                 "tool_calls": getattr(msg, "tool_calls", None),
                 "additional_kwargs": getattr(msg, "additional_kwargs", None),
             }
+            # Opt-in (ducx_entropy): persist per-token logprobs when present.
+            # Only populated when the agent was built with --capture-logprobs, so
+            # default runs serialize exactly as before.
+            response_metadata = getattr(msg, "response_metadata", None) or {}
+            logprobs = (response_metadata.get("logprobs") or {}).get("content")
+            if logprobs:
+                entry["logprobs"] = logprobs
             serialized.append(entry)
         except Exception:
             serialized.append({"type": str(type(msg)), "content": str(msg)})
@@ -539,6 +570,12 @@ def main() -> None:
             parallel_tool_calls = False
         from main import initialize_agent
 
+        noise_manifest_path = None
+        if args.noise_config:
+            noise_manifest_path = os.path.join(
+                log_dir, f"noise_manifest_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+            )
+
         agent, _ = initialize_agent(
             args.prompt_file,
             tools_to_use=tools,
@@ -553,6 +590,9 @@ def main() -> None:
             llm_api_key=gemini_key,
             log_dir=log_dir,
             parallel_tool_calls=parallel_tool_calls,
+            noise_config=args.noise_config,
+            noise_manifest_path=noise_manifest_path,
+            capture_logprobs=args.capture_logprobs or None,
         )
 
     total = len(train_dataset)
@@ -708,7 +748,13 @@ def main() -> None:
             }
             logger.info(json.dumps(log_entry))
             print(f"Error processing question {example.get('question_id', 'unknown')}: {exc}")
-            raise
+            # Default DUCX behaviour is unchanged (crash on per-question error). For
+            # noise/compose experiments, log the failure and continue the batch so one
+            # pathological question (e.g. context overflow from a non-semantic
+            # intermediate) does not kill the whole run.
+            if not args.noise_config:
+                raise
+            skipped += 1
 
     print("\nBenchmark Summary:")
     total_processed_all = processed + resume_summary["completed"]
@@ -728,6 +774,24 @@ def main() -> None:
         print(f"\nLog file saved to: {os.path.abspath(log_filename)}")
     else:
         print(f"\nWarning: Log file could not be verified at: {os.path.abspath(log_filename)}")
+
+    # Opt-in: noise selection metrics (no-op unless --noise-config + --noise-metrics).
+    if args.noise_config and args.noise_metrics:
+        try:
+            from ducx_noise.metrics import append_row, compute_run_metrics
+
+            manifest_path = locals().get("noise_manifest_path")
+            label = os.path.splitext(os.path.basename(args.noise_config))[0]
+            metrics_csv = os.path.join(log_dir, "noise_metrics.csv")
+            row = compute_run_metrics(log_filename, manifest_path, label=label, seed=0)
+            append_row(metrics_csv, row)
+            print(
+                f"\nNoise metrics: selection_accuracy={row['tool_selection_accuracy']} "
+                f"noise_misselection_rate={row['noise_tool_misselection_rate']} "
+                f"entropy={row['selection_entropy_bits']} -> {metrics_csv}"
+            )
+        except Exception as exc:
+            print(f"Warning: noise metrics step failed: {exc}")
 
 
 if __name__ == "__main__":

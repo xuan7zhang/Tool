@@ -1,0 +1,9 @@
+# Table 2: distractor_10 + redundant equivalent copies (N_dist + N_red).
+seed: 0
+shuffle_tools: true
+label: t2_red
+distractor: {enabled: true, count: 10, llm_generate: false, cache_path: ducx_noise/cache/distractors.json, style: plausible}
+redundant: {enabled: true, copies_per_tool: 1, tools: null}
+unreliable: {enabled: false}
+description_corruption: {enabled: false}
+schema_noise: {enabled: false}

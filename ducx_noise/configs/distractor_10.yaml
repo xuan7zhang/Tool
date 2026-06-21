@@ -1,0 +1,14 @@
+# 10 distractor tools (high level of the distractor sweep: 0 / 2 / 5 / 10).
+seed: 0
+shuffle_tools: true
+label: distractor_10
+distractor:
+  enabled: true
+  count: 10
+  llm_generate: false
+  cache_path: ducx_noise/cache/distractors.json
+  style: plausible
+unreliable: {enabled: false}
+redundant: {enabled: false}
+description_corruption: {enabled: false}
+schema_noise: {enabled: false}

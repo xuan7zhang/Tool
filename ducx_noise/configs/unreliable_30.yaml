@@ -1,0 +1,14 @@
+# All real tools fail 30% of the time (error mode). Schema unchanged.
+seed: 0
+shuffle_tools: false
+label: unreliable_30
+distractor: {enabled: false}
+unreliable:
+  enabled: true
+  p_fail: 0.3
+  failure_mode: error        # error | empty | timeout
+  timeout_seconds: 0.0       # real sleep before failing when mode == timeout
+  tools: null                # null = all real tools, or a list of names
+redundant: {enabled: false}
+description_corruption: {enabled: false}
+schema_noise: {enabled: false}

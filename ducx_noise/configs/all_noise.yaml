@@ -1,0 +1,29 @@
+# Compositional example: all five noise types enabled at once.
+seed: 0
+shuffle_tools: true
+label: all_noise
+distractor:
+  enabled: true
+  count: 3
+  llm_generate: false
+  cache_path: ducx_noise/cache/distractors.json
+  style: plausible
+unreliable:
+  enabled: true
+  p_fail: 0.2
+  failure_mode: error
+redundant:
+  enabled: true
+  copies_per_tool: 1
+  tools: [chest_xray_classifier]
+description_corruption:
+  enabled: true
+  level: 0.6
+  style: vague
+  llm_generate: false
+  cache_path: ducx_noise/cache/descriptions.json
+schema_noise:
+  enabled: true
+  rename_params: true
+  inject_optional: 1
+  shuffle_order: true

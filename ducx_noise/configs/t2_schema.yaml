@@ -1,0 +1,9 @@
+# Table 2: distractor_10 + schema noise on real tools (N_dist + N_schema).
+seed: 0
+shuffle_tools: true
+label: t2_schema
+distractor: {enabled: true, count: 10, llm_generate: false, cache_path: ducx_noise/cache/distractors.json, style: plausible}
+schema_noise: {enabled: true, rename_params: true, inject_optional: 1, shuffle_order: true, tools: null}
+unreliable: {enabled: false}
+redundant: {enabled: false}
+description_corruption: {enabled: false}

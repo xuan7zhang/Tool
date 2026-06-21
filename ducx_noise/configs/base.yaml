@@ -1,0 +1,10 @@
+# Base environment: no noise. Identity transform -> default DUCX behaviour.
+# Provided so base-vs-noisy comparisons can use an explicit config + label.
+seed: 0
+shuffle_tools: false
+label: base
+distractor: {enabled: false}
+unreliable: {enabled: false}
+redundant: {enabled: false}
+description_corruption: {enabled: false}
+schema_noise: {enabled: false}

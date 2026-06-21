@@ -1,0 +1,9 @@
+# Table 2: distractor_10 + unreliable real tools, p_fail=0.3 (N_dist + N_unrel).
+seed: 0
+shuffle_tools: true
+label: t2_unrel03
+distractor: {enabled: true, count: 10, llm_generate: false, cache_path: ducx_noise/cache/distractors.json, style: plausible}
+unreliable: {enabled: true, p_fail: 0.3, failure_mode: error, tools: null}
+redundant: {enabled: false}
+description_corruption: {enabled: false}
+schema_noise: {enabled: false}

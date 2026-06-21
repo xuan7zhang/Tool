@@ -33,6 +33,9 @@ def initialize_agent(
     llm_kwargs=None,
     log_dir="logs",
     parallel_tool_calls: bool | None = None,
+    noise_config=None,
+    noise_manifest_path: str | None = None,
+    capture_logprobs: int | None = None,
 ):
     """Initialize the CXR agent with specified tools and configuration.
 
@@ -117,10 +120,45 @@ def initialize_agent(
             base_url=openai_kwargs.get("base_url"),
         )
         openai_kwargs.update(resolved_kwargs)
+        # Opt-in (ducx_entropy): request per-token logprobs so reasoning-entropy
+        # can be computed from the run log. Off (None) => construction unchanged.
+        if capture_logprobs:
+            openai_kwargs.setdefault("logprobs", True)
+            openai_kwargs.setdefault("top_logprobs", int(capture_logprobs))
         model = ChatOpenAI(model=model, temperature=temperature, top_p=top_p, **openai_kwargs)
+
+    # Opt-in noisy environment. With noise_config=None this branch is skipped
+    # entirely, so default DUCX behaviour is byte-for-byte unchanged.
+    agent_tools = list(tools_dict.values())
+    if noise_config is not None:
+        from ducx_noise import apply_noise, load_noise_config
+
+        cfg = load_noise_config(noise_config)
+        gen_client = None
+        gen_model = getattr(model, "model_name", None) or getattr(model, "model", None)
+        needs_llm = cfg is not None and (
+            cfg.distractor.llm_generate or cfg.description_corruption.llm_generate
+        )
+        if needs_llm and llm_backend != "gemini":
+            try:
+                import openai as _openai
+
+                gen_client = _openai.OpenAI(**openai_kwargs)
+            except Exception as exc:  # fall back to deterministic generation
+                print(f"Warning: could not build LLM client for noise generation: {exc}")
+        env = apply_noise(agent_tools, cfg, client=gen_client, model=gen_model)
+        agent_tools = env.tools
+        tools_dict = {t.name: t for t in env.tools}
+        if noise_manifest_path:
+            env.save_manifest(noise_manifest_path)
+        print(
+            f"Noisy environment applied: {len(env.tools)} tools "
+            f"({sum(p.is_noise_tool for p in env.manifest.values())} noise)."
+        )
+
     agent = Agent(
         model,
-        tools=list(tools_dict.values()),
+        tools=agent_tools,
         log_tools=True,
         log_dir=log_dir,
         system_prompt=prompt,

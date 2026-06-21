@@ -1,0 +1,9 @@
+# 50 distractor tools (Table 1 sweep level; 58 tools total in direct context).
+seed: 0
+shuffle_tools: true
+label: distractor_50
+distractor: {enabled: true, count: 50, llm_generate: false, cache_path: ducx_noise/cache/distractors.json, style: plausible}
+unreliable: {enabled: false}
+redundant: {enabled: false}
+description_corruption: {enabled: false}
+schema_noise: {enabled: false}

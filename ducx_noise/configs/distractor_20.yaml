@@ -1,0 +1,9 @@
+# 20 distractor tools (Table 1 sweep level).
+seed: 0
+shuffle_tools: true
+label: distractor_20
+distractor: {enabled: true, count: 20, llm_generate: false, cache_path: ducx_noise/cache/distractors.json, style: plausible}
+unreliable: {enabled: false}
+redundant: {enabled: false}
+description_corruption: {enabled: false}
+schema_noise: {enabled: false}
