@@ -155,13 +155,43 @@ degrades reasoning once the toolbox is large enough. Plot:
 
 ---
 
+## 7b. Gating experiment (mixed set, n=379 paired) — the headline positive
+
+Mixed set: 200 text-answerable (ChestAgentBench) + 200 tool-necessary (CLS probe).
+Two runs on the same questions (never_tool, always_tool); `gated` = per-question
+oracle gate (text→never, tool→always).
+
+Per-qtype (paired McNemar):
+| qtype | never | always | tool effect | p |
+|---|---|---|---|---|
+| text_answerable (n=191) | 0.497 | 0.304 | **−0.19** | <1e-3 |
+| tool_necessary (n=188) | 0.218 | 0.771 | **+0.55** | <1e-3 |
+
+Overall (n=379): never 0.359, always 0.536, **gated 0.633**.
+- **gated vs always: +0.10, p<1e-3** (47 vs 10 discordant) — the gate beats
+  always-tools, entirely by withholding tools on text-answerable questions.
+- gated vs never: +0.27, p<1e-3 (122 vs 18).
+
+Mechanism (active, not passive): on text-answerable questions with tools present,
+the model **calls a tool 99%** of the time (189/191) and is then misled — accuracy
+0.30 when it calls vs 0.50 when it doesn't. It cannot resist using a diagnostic
+tool even when the answer is in the text.
+
+**This is the largest, most robust tool-space lever: GATING (expose tools at all?)
+beats always- and never-tools with high significance.** Plot:
+`analysis/multitool/gating.png`. (Gate here is oracle; a real training-free gate is
+easy since probe vs clinical questions are lexically distinct — same saturation
+caveat as routing.)
+
 ## 8. What's robust vs retracted
 
 | claim | status |
 |---|---|
 | Tools help on tool-necessary tasks (chance → ~0.78) | **robust** |
-| Tools are net-negative on text-answerable tasks (0.52→0.48) | suggestive (n=50, dir. consistent) |
-| Tool value flips sign with tool-necessity → gating is the first lever | **robust (both signs observed)** |
+| Tools HURT on text-answerable tasks | **robust** (−0.19, p<1e-3, n=191 paired) |
+| Tool value flips sign with tool-necessity → gating is the first lever | **robust** (both signs p<1e-3) |
+| Gating beats always- AND never-tools | **robust** (+0.10 / +0.27, p<1e-3, n=379) |
+| Model calls a tool even when useless (text-answerable) | **robust** (99% call rate) |
 | Model routes to the right tool (lexical & self, ≤10 distractors) | **robust** |
 | Model never *selects* a distractor | **robust** |
 | 1 extra irrelevant *real* tool degrades accuracy (−0.09) | **RETRACTED** (n=300 p=1.0) |
