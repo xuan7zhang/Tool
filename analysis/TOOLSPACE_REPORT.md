@@ -67,6 +67,42 @@ zero-dependency lexical retriever hits top1=1.0, and **the model itself
 This argues that self-routing prompting ("pick your tools first") is insufficient;
 the pruning must be enforced outside the model's context.
 
+## Dissociation experiment (n=300, paired McNemar) — OVERTURNS the pollution premise
+
+Larger, paired follow-up to test whether the model "knows but can't suppress"
+(so external pruning is needed). Greedy ⇒ deterministic ⇒ exact same-question
+pairing. CLS arm is the clean one (n=225); SEG used the intensity metric here and
+is broken (oracle only 0.36 — the model can't rank mean-intensity from the tool
+output), so it is excluded.
+
+| condition (CLS, n=225) | accuracy |
+|---|---|
+| no_tool | 0.231 (≈chance) |
+| oracle (prune to needed tool) | 0.782 |
+| all_real (both tools) | 0.787 |
+| self_route (both tools + "pick one, ignore others" instruction) | 0.516 |
+
+Paired McNemar:
+- **oracle vs all_real: 12 vs 13 discordant, p=1.0 → NO effect.** Exposing the
+  irrelevant real tool does NOT degrade accuracy. **The n=120 −0.09/−0.12
+  "pollution" was small-sample noise and does NOT replicate — that claim is
+  retracted.**
+- **self_route vs all_real: 9 vs 70 discordant, p<1e-3 → self-route HURTS −0.27.**
+  And not via mis-routing: the model called the correct classifier on all 225 CLS
+  questions. The meta-instruction itself degrades the answer.
+
+**Conclusions (opposite of the hypothesis):**
+1. Tool necessity is robust (0.231 → 0.782).
+2. There is NO pollution headroom from one extra real tool — nothing to prune.
+   Tool-space pollution is a *many-distractor* phenomenon (see the distractor
+   study: harm only with ≥2 fake tools, non-monotone/U-shaped), not a 1–2-tool
+   issue. So the earlier "+0.09 recoverable gap" evaporates under a powered test.
+3. Self-routing prompting BACKFIRES (−0.27) even though routing is already
+   correct — a prompt-sensitivity result (one instruction wording), not proof all
+   self-routing hurts. Enforced external pruning is moot when there is no gap.
+
+Plot: `analysis/multitool/dissociation.png`. Analysis: `analysis/dissociation_analysis.py`.
+
 ## Limitations / next
 
 - Routing is easy here because the task domain is lexically obvious. A harder
