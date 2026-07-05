@@ -137,6 +137,123 @@ def generate_distractors(
     return cleaned
 
 
+def _aligned_name(real_name: str, i: int, used: set) -> str:
+    """A sibling-looking name for an aligned distractor (mimics a real tool)."""
+    suffixes = ["_v2", "_pro", "_plus", "_ext", "_hd", "_2", "_advanced", "_alt"]
+    name = f"{real_name}{suffixes[i % len(suffixes)]}"
+    while name in used:
+        name = f"{name}_x"
+    return name
+
+
+def _fallback_aligned(real_specs, count, seed) -> List[Dict[str, str]]:
+    """Deterministic aligned distractors: near-clone each real tool's wording.
+
+    Structure is preserved (same opening verb / object) so the description reads
+    like a genuine sibling of the imitated tool -- the 'as if real' tier without
+    an LLM. Only the model backing is fake.
+    """
+    rng = random.Random(_cache_key("aligned", [s["name"] for s in real_specs], count, seed))
+    specs: List[Dict[str, str]] = []
+    used = {s["name"] for s in real_specs}
+    for i in range(count):
+        real = real_specs[i % len(real_specs)] if real_specs else {"name": "tool", "description": ""}
+        desc = (real.get("description") or "").strip()
+        # Light structural paraphrase that keeps it very close to the original.
+        variants = [
+            f"{desc}",
+            f"{desc} Provides an equivalent secondary estimate.",
+            f"Alternative module: {desc[0].lower() + desc[1:] if desc else 'analyzes the radiograph.'}",
+        ]
+        aligned_desc = variants[i % len(variants)] or desc or "Analyzes the chest radiograph."
+        name = _aligned_name(real["name"], i, used)
+        used.add(name)
+        specs.append({"name": name, "description": aligned_desc, "imitates": real["name"]})
+    return specs
+
+
+def generate_aligned_distractors(
+    real_specs: List[Dict[str, str]],
+    count: int,
+    seed: int,
+    client: Any = None,
+    model: Optional[str] = None,
+    cache_path: str = "",
+) -> List[Dict[str, str]]:
+    """Aligned ('as-if-real') distractors: each mimics a specific real tool.
+
+    Per decision-point 3, the description is LLM-rewritten from a real tool's
+    description to match its wording/structure while remaining functionally
+    useless; a deterministic near-clone template is the offline fallback. Results
+    are cached like :func:`generate_distractors`.
+    """
+    if count <= 0 or not real_specs:
+        return []
+    real_names = [s["name"] for s in real_specs]
+    key = _cache_key("aligned_distractors", real_names, count, seed, model or "fallback")
+    cache = _load_cache(cache_path)
+    if key in cache:
+        return cache[key][:count]
+
+    specs: Optional[List[Dict[str, str]]] = None
+    if client is not None and model:
+        try:
+            specs = _llm_aligned_distractors(real_specs, count, seed, client, model)
+        except Exception:
+            specs = None
+    if not specs:
+        specs = _fallback_aligned(real_specs, count, seed)
+
+    cleaned: List[Dict[str, str]] = []
+    used = set(real_names)
+    for spec in specs:
+        name = _slugify(spec.get("name", "aligned_distractor"))
+        while name in used:
+            name = f"{name}_x"
+        used.add(name)
+        cleaned.append({
+            "name": name,
+            "description": spec.get("description", "An auxiliary imaging tool."),
+            "imitates": spec.get("imitates"),
+        })
+    cleaned = cleaned[:count]
+    cache[key] = cleaned
+    _save_cache(cache_path, cache)
+    return cleaned
+
+
+def _llm_aligned_distractors(real_specs, count, seed, client, model) -> List[Dict[str, str]]:
+    """LLM rewrites real descriptions into look-alike (aligned) distractors."""
+    listing = "\n".join(f"- {s['name']}: {s['description'][:200]}" for s in real_specs)
+    prompt = (
+        "You are designing HARD distractor tools for a chest X-ray agent benchmark. "
+        "For each fake tool, closely MIMIC the wording, structure, and terminology of "
+        "one of the real tools below so it is easy to mistake for the real thing, but "
+        "make it functionally useless / redundant for actually answering the question. "
+        "Invent {n} such look-alike tools. Return ONLY a JSON list of objects with keys "
+        "'name' (snake_case, resembling the imitated tool), 'description' (mimics the "
+        "imitated tool's phrasing), and 'imitates' (the exact real tool name copied).\n\n"
+        "Real tools:\n{listing}\n"
+    ).format(n=count, listing=listing)
+    response = client.chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "system", "content": "You output only valid JSON."},
+            {"role": "user", "content": prompt},
+        ],
+        max_tokens=1000,
+        temperature=0.7,
+        seed=seed,
+    )
+    text = response.choices[0].message.content if response.choices else "[]"
+    match = re.search(r"\[.*\]", text or "", re.DOTALL)
+    data = json.loads(match.group(0)) if match else []
+    return [
+        {"name": d["name"], "description": d.get("description", ""), "imitates": d.get("imitates")}
+        for d in data
+    ]
+
+
 def _llm_distractors(real_specs, count, seed, client, model) -> List[Dict[str, str]]:
     listing = "\n".join(f"- {s['name']}: {s['description'][:160]}" for s in real_specs)
     prompt = (

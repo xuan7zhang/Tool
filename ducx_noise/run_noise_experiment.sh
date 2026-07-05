@@ -29,6 +29,14 @@ TOOL_GPU=${TOOL_GPU:-1}   # GPU index for the agent tools
 CONFIGS=${CONFIGS:-"ducx_noise/configs/base.yaml ducx_noise/configs/distractor_5.yaml"}
 SEEDS=${SEEDS:-"0 1 2"}
 MAX_CASES=${MAX_CASES:-20}
+# Reproducibility knobs (Stage 1).
+MODEL_DTYPE=${MODEL_DTYPE:-fp16}      # fp16 | bf16 (mapped to vLLM --dtype)
+DECODING=${DECODING:-greedy}          # greedy | sample
+case "$MODEL_DTYPE" in
+  fp16) VLLM_DTYPE=float16 ;;
+  bf16) VLLM_DTYPE=bfloat16 ;;
+  *) echo "Unknown MODEL_DTYPE=$MODEL_DTYPE"; exit 1 ;;
+esac
 RESULTS_DIR=${RESULTS_DIR:-$DUCK/logs/noise_experiment}
 RESULTS_CSV=$RESULTS_DIR/results.csv
 mkdir -p "$RESULTS_DIR"
@@ -43,6 +51,7 @@ if [ -z "$OPENAI_BASE_URL" ]; then
   CUDA_VISIBLE_DEVICES=$VLLM_GPU $VLLM_PY -m vllm.entrypoints.openai.api_server \
     --model "$MODEL_ID" --served-model-name "$SERVED_NAME" --port $PORT \
     --gpu-memory-utilization 0.85 --max-model-len 16384 \
+    --dtype "$VLLM_DTYPE" --seed 0 \
     --enable-auto-tool-choice --tool-call-parser hermes \
     > "$DUCK/logs/vllm_noise_${SLURM_JOB_ID:-local}_p${PORT}.log" 2>&1 &
   VLLM_PID=$!
@@ -71,6 +80,7 @@ for cfg in $CONFIGS; do
       --model "$SERVED_NAME" --model-dir "$MEDRAX_WEIGHTS" --temp-dir "$MEDRAX_TEMP" \
       --data-file data/chestagentbench/metadata.jsonl --device cuda \
       --log-prefix "$log_prefix" --max-cases "$MAX_CASES" --llm-parse \
+      --decoding "$DECODING" --seed "$seed" --model-dtype "$MODEL_DTYPE" \
       --noise-config "$tmp_cfg"
     run_log=$(ls -t "$DUCK/logs/$log_prefix/${log_prefix}_"*.json | head -1)
     saved_manifest=$(ls -t "$DUCK/logs/$log_prefix/noise_manifest_"*.json 2>/dev/null | head -1 || true)

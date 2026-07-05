@@ -13,7 +13,11 @@ from typing import Dict, List, Tuple
 from langchain_core.tools import BaseTool
 
 from .config import NoiseConfig
-from .generation import corrupt_description, generate_distractors
+from .generation import (
+    corrupt_description,
+    generate_aligned_distractors,
+    generate_distractors,
+)
 from .provenance import (
     SOURCE_ATOM,
     SOURCE_DISTRACTOR,
@@ -37,6 +41,33 @@ def _real_slots(tools: List[BaseTool], manifest: Dict[str, ToolProvenance]) -> L
     """Names of tools that originate from real tools (real or unreliable source)."""
     return [t.name for t in tools if manifest[t.name].source not in
             (SOURCE_DISTRACTOR, SOURCE_REDUNDANT)]
+
+
+def _place(existing: List[BaseTool], extra: List[BaseTool], position: str,
+           index: int, rng) -> List[BaseTool]:
+    """Insert ``extra`` tools into ``existing`` at the requested position.
+
+    position: head | tail | random | index (index -> absolute slot `index`).
+    'random' inserts each extra tool at an independent seeded random slot so the
+    distractors are scattered rather than clustered. Under tool_order='shuffle'
+    this placement is irrelevant (the whole list is reshuffled downstream), but
+    for 'fixed'/'controlled' it is the final layout.
+    """
+    if not extra:
+        return existing
+    if position == "head":
+        return list(extra) + list(existing)
+    if position == "index":
+        k = max(0, min(int(index), len(existing)))
+        return list(existing[:k]) + list(extra) + list(existing[k:])
+    if position == "random":
+        out = list(existing)
+        for tool in extra:
+            j = rng.randint(0, len(out))
+            out.insert(j, tool)
+        return out
+    # default: tail
+    return list(existing) + list(extra)
 
 
 # --------------------------------------------------------------------------
@@ -222,7 +253,11 @@ def distractor(tools, manifest, cfg: NoiseConfig, ctx: TransformContext):
         for t in ctx.base_real_tools
         if dc.tools is None or t.name in set(dc.tools)
     ]
-    specs = generate_distractors(
+    # Similarity tier (Stage 3): 'aligned' distractors mimic a real tool's
+    # wording (LLM-rewritten, cached); 'obvious' are clearly-unrelated tools.
+    similarity = getattr(dc, "similarity", "obvious")
+    gen = generate_aligned_distractors if similarity == "aligned" else generate_distractors
+    specs = gen(
         real_specs, dc.count, ctx.seed,
         client=ctx.client if dc.llm_generate else None,
         model=ctx.model if dc.llm_generate else None,
@@ -250,9 +285,24 @@ def distractor(tools, manifest, cfg: NoiseConfig, ctx: TransformContext):
             source=SOURCE_DISTRACTOR,
             noises=["distractor"],
             real_backed=False,
-            meta={"imitates": spec.get("imitates"), "style": dc.style},
+            meta={
+                "imitates": spec.get("imitates"),
+                "style": dc.style,
+                "similarity": similarity,
+                "position": getattr(dc, "position", "tail"),
+            },
         )
-    return tools + extra, manifest
+    # Place the distractors per the configured position. Under 'shuffle' ordering
+    # this is overridden by the final reshuffle in apply_noise; under
+    # 'fixed'/'controlled' it is the final layout used for position ablation.
+    place_rng = ctx.rng("distractor_position")
+    tools = _place(
+        tools, extra,
+        position=getattr(dc, "position", "tail"),
+        index=getattr(dc, "index", 0),
+        rng=place_rng,
+    )
+    return tools, manifest
 
 
 # --------------------------------------------------------------------------

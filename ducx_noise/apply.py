@@ -83,7 +83,11 @@ def apply_noise(
         transform = TRANSFORM_REGISTRY[name]
         tools, manifest = transform(tools, manifest, cfg, ctx)
 
-    if cfg.shuffle_tools:
+    # Final ordering policy. 'shuffle' seeded-shuffles the WHOLE list so a
+    # distractor never sits at a fixed slot (decoupling position from role);
+    # 'fixed'/'controlled' keep the order produced by the transforms, which
+    # already honored each distractor's requested position/index.
+    if cfg.resolved_tool_order == "shuffle":
         order_rng = ctx.rng("final_order")
         order_rng.shuffle(tools)
 

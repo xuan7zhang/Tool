@@ -1,0 +1,7 @@
+group,n,n_with_logprob,logprob_mean,logprob_std
+with_tool,350,350,-0.084098,0.049355
+no_tool,100,100,-0.054279,0.091294
+with_tool:correct,188,188,-0.069667,0.047283
+with_tool:incorrect,162,162,-0.100845,0.046327
+no_tool:correct,43,43,-0.018238,0.048166
+no_tool:incorrect,57,57,-0.081467,0.105606

@@ -36,6 +36,7 @@ def initialize_agent(
     noise_config=None,
     noise_manifest_path: str | None = None,
     capture_logprobs: int | None = None,
+    seed: int | None = None,
 ):
     """Initialize the CXR agent with specified tools and configuration.
 
@@ -120,12 +121,23 @@ def initialize_agent(
             base_url=openai_kwargs.get("base_url"),
         )
         openai_kwargs.update(resolved_kwargs)
+        # ChatOpenAI takes per-request generation params (logprobs, seed) that the
+        # raw openai.OpenAI(**openai_kwargs) client used for noise generation must
+        # NOT receive as constructor args. Keep them in a separate dict so
+        # openai_kwargs stays pure connection kwargs (api_key / base_url).
+        chat_extra: dict = {}
         # Opt-in (ducx_entropy): request per-token logprobs so reasoning-entropy
         # can be computed from the run log. Off (None) => construction unchanged.
         if capture_logprobs:
-            openai_kwargs.setdefault("logprobs", True)
-            openai_kwargs.setdefault("top_logprobs", int(capture_logprobs))
-        model = ChatOpenAI(model=model, temperature=temperature, top_p=top_p, **openai_kwargs)
+            chat_extra["logprobs"] = True
+            chat_extra["top_logprobs"] = int(capture_logprobs)
+        # Deterministic decoding: pass the generation seed to the server so greedy
+        # runs are reproducible.
+        if seed is not None:
+            chat_extra["seed"] = int(seed)
+        model = ChatOpenAI(
+            model=model, temperature=temperature, top_p=top_p, **openai_kwargs, **chat_extra
+        )
 
     # Opt-in noisy environment. With noise_config=None this branch is skipped
     # entirely, so default DUCX behaviour is byte-for-byte unchanged.

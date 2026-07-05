@@ -23,6 +23,16 @@ DUCK_PY=$DS/.venvs/DUCK/bin/python
 SERVED_NAME=qwen3-vl-8b
 MODEL_ID=Qwen/Qwen3-VL-8B-Instruct
 PORT=8000
+# Reproducibility knobs (Stage 1): fp16 load + deterministic decoding + fixed seed.
+MODEL_DTYPE=${MODEL_DTYPE:-fp16}          # fp16 | bf16
+DECODING=${DECODING:-greedy}              # greedy | sample
+SEED=${SEED:-0}
+# Map fp16/bf16 -> vLLM --dtype value.
+case "$MODEL_DTYPE" in
+  fp16) VLLM_DTYPE=float16 ;;
+  bf16) VLLM_DTYPE=bfloat16 ;;
+  *) echo "Unknown MODEL_DTYPE=$MODEL_DTYPE"; exit 1 ;;
+esac
 
 echo "=== GPUs visible ==="; nvidia-smi --query-gpu=index,name,memory.total --format=csv
 
@@ -37,6 +47,8 @@ CUDA_VISIBLE_DEVICES=0 $VLLM_PY -m vllm.entrypoints.openai.api_server \
   --port $PORT \
   --gpu-memory-utilization 0.85 \
   --max-model-len 16384 \
+  --dtype "$VLLM_DTYPE" \
+  --seed "$SEED" \
   --enable-auto-tool-choice \
   --tool-call-parser hermes \
   > "$DUCK/logs/vllm_${SLURM_JOB_ID}.log" 2>&1 &
@@ -73,6 +85,9 @@ CUDA_VISIBLE_DEVICES=1 HF_HOME=$MEDRAX_WEIGHTS $DUCK_PY launch_over_chexbench.py
   --device cuda \
   --log-prefix qwen3vl8b-vllm \
   --max-cases "${MAX_CASES:-3}" \
+  --decoding "$DECODING" \
+  --seed "$SEED" \
+  --model-dtype "$MODEL_DTYPE" \
   --llm-parse
 
 echo "=== eval done. logs under $DUCK/logs/qwen3vl8b-vllm/ ==="

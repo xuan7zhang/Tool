@@ -1,0 +1,16 @@
+# 5 ALIGNED distractors (Stage 3): descriptions mimic real tools (hard tier).
+seed: 0
+tool_order: shuffle          # shuffle so distractors are not tail-locked
+label: distractor_5_aligned
+distractor:
+  enabled: true
+  count: 5
+  llm_generate: true         # LLM rewrites real descriptions into look-alikes (cached); template fallback offline
+  cache_path: ducx_noise/cache/distractors_aligned.json
+  style: plausible
+  similarity: aligned        # obvious | aligned
+  position: random
+unreliable: {enabled: false}
+redundant: {enabled: false}
+description_corruption: {enabled: false}
+schema_noise: {enabled: false}

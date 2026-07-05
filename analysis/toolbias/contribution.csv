@@ -1,0 +1,15 @@
+kind,path,condition,n,accuracy,logprob_mean,d_accuracy,d_logprob
+condition,tool_useful_distractor,no_tool,50,0.34,-0.087874,,
+condition,tool_useful_distractor,tool_useful,50,0.74,-0.048401,,
+condition,tool_useful_distractor,tool_useful_distractor,200,0.51,-0.060302,,
+condition,tool_useless,no_tool,50,0.52,-0.020684,,
+condition,tool_useless,tool_only,50,0.48,-0.150366,,
+condition,tool_useless,tool_useless,50,0.5,-0.148714,,
+delta_vs_no_tool,tool_useful_distractor,tool_useful,50,0.74,-0.048401,0.4,0.039473
+delta_vs_no_tool,tool_useful_distractor,tool_useful_distractor,200,0.51,-0.060302,0.17,0.027572
+delta_vs_no_tool,tool_useless,tool_only,50,0.48,-0.150366,-0.04,-0.129682
+delta_vs_no_tool,tool_useless,tool_useless,50,0.5,-0.148714,-0.02,-0.12803
+distractor_marginal_vs_clean,tool_useful_distractor,"n=2,sim=aligned",50,0.46,-0.070062,-0.28,-0.021661
+distractor_marginal_vs_clean,tool_useful_distractor,"n=2,sim=obvious",50,0.48,-0.06112,-0.26,-0.012719
+distractor_marginal_vs_clean,tool_useful_distractor,"n=5,sim=aligned",50,0.44,-0.059729,-0.3,-0.011328
+distractor_marginal_vs_clean,tool_useful_distractor,"n=5,sim=obvious",50,0.66,-0.050298,-0.08,-0.001897

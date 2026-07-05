@@ -1,0 +1,17 @@
+kind,n_distractors,similarity,n,accuracy,logprob_mean,called_tools
+distractor_grid,1,aligned,50,0.82,-0.038786,
+distractor_grid,1,obvious,50,0.84,-0.04796,
+distractor_grid,2,aligned,50,0.46,-0.070062,
+distractor_grid,2,obvious,50,0.48,-0.06112,
+distractor_grid,3,aligned,50,0.72,-0.047527,
+distractor_grid,3,obvious,50,0.54,-0.057331,
+distractor_grid,5,aligned,300,0.576667,-0.058308,
+distractor_grid,5,obvious,50,0.66,-0.050298,
+distractor_grid,10,aligned,50,0.58,-0.051666,
+distractor_grid,10,obvious,50,0.54,-0.050006,
+distractor_grid,20,aligned,50,0.8,-0.055989,
+distractor_grid,20,obvious,50,0.82,-0.037897,
+called_set,,,900,0.636667,-0.053716,chest_xray_classifier
+called_set,,,100,0.43,-0.054279,(none)
+called_set,,,92,0.532609,-0.147784,"chest_xray_classifier,image_visualizer"
+called_set,,,8,0.0,-0.169734,"chest_xray_classifier,dicom_processor,image_visualizer"

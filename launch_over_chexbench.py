@@ -56,6 +56,32 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model", default="chatgpt-4o-latest")
     parser.add_argument("--temperature", type=float, default=0.7)
     parser.add_argument("--top-p", type=float, default=0.95)
+    parser.add_argument(
+        "--decoding",
+        choices=["greedy", "sample"],
+        default="greedy",
+        help=(
+            "Decoding mode. 'greedy' (default) forces deterministic decoding "
+            "(temperature=0, top_p=1, no top-k sampling) for reproducibility; "
+            "'sample' keeps the --temperature/--top-p sampling values."
+        ),
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=0,
+        help="Global RNG + generation seed for reproducibility (passed to the LLM server).",
+    )
+    parser.add_argument(
+        "--model-dtype",
+        choices=["fp16", "bf16"],
+        default="fp16",
+        help=(
+            "Provenance only: the dtype the served VLM was loaded with (set on the "
+            "vLLM serve command via --dtype). Recorded in each log record; does not "
+            "reload weights from this process."
+        ),
+    )
     parser.add_argument("--log-prefix", type=str, default=None)
     parser.add_argument("--max-cases", type=int, default=None)
     parser.add_argument("--data-file", default="data/chestagentbench/metadata.jsonl")
@@ -76,6 +102,18 @@ def parse_args() -> argparse.Namespace:
         "--noise-metrics",
         action="store_true",
         help="After the run, compute noise selection metrics into the log dir (needs --noise-config).",
+    )
+    parser.add_argument(
+        "--path",
+        choices=["tool_useless", "tool_useful_distractor"],
+        default=None,
+        help="Experiment path label recorded in every Stage-5 record (Stage 4).",
+    )
+    parser.add_argument(
+        "--condition",
+        choices=["no_tool", "tool_only", "tool_useless", "tool_useful", "tool_useful_distractor"],
+        default=None,
+        help="Experiment condition label recorded in every Stage-5 record (Stage 4).",
     )
     parser.add_argument(
         "--capture-logprobs",
@@ -254,17 +292,36 @@ def serialize_messages(messages):
     return serialized
 
 
+def _extract_direct_logprobs(response) -> Optional[List[dict]]:
+    """Pull per-token logprobs from a raw OpenAI chat.completions response.
+
+    Returns a list of ``{"token", "logprob"}`` dicts for the generated tokens, or
+    None when the server did not return logprobs (e.g. --capture-logprobs off).
+    Used by the no-tool / direct condition where there is no agent trace to mine.
+    """
+    try:
+        choice = response.choices[0]
+        content = choice.logprobs.content if choice.logprobs else None
+        if not content:
+            return None
+        out = []
+        for item in content:
+            out.append({"token": getattr(item, "token", None), "logprob": float(item.logprob)})
+        return out
+    except Exception:
+        return None
+
+
 def build_message(example: dict, image_paths: List[str]) -> str:
     question = example.get("question", "")
-    explanation = example.get("explanation", "")
     lines = [
         "Given the following medical case:",
         question,
         "",
         "Base your answer only on the provided images and case information.",
     ]
-    if explanation:
-        lines.extend(["", "Case details:", explanation])
+    # NOTE: example["explanation"] is the ground-truth rationale and must never
+    # be included in the prompt -- it leaks the answer to the evaluated model.
     lines.append("")
     lines.append("Image paths (local files):")
     for path in image_paths:
@@ -401,8 +458,45 @@ def invoke_with_retries(
     return response_text, predicted, attempts, trace
 
 
+def apply_decoding_mode(args) -> None:
+    """Resolve the decoding mode into concrete sampling params (in place).
+
+    'greedy' (the reproducible default) pins temperature=0 and top_p=1 so the
+    server does deterministic argmax decoding and disables top-p/top-k sampling.
+    'sample' leaves the user-supplied --temperature/--top-p untouched. Only the
+    *main* generation is affected; answer-extraction calls are always temp 0.
+    """
+    if args.decoding == "greedy":
+        args.temperature = 0.0
+        args.top_p = 1.0
+
+
+def seed_everything(seed: int) -> None:
+    """Seed Python/NumPy/torch RNGs for reproducibility (server seed is separate)."""
+    import random as _random
+
+    _random.seed(seed)
+    os.environ.setdefault("PYTHONHASHSEED", str(seed))
+    try:
+        import numpy as _np
+
+        _np.random.seed(seed)
+    except Exception:
+        pass
+    try:
+        import torch as _torch
+
+        _torch.manual_seed(seed)
+        if _torch.cuda.is_available():
+            _torch.cuda.manual_seed_all(seed)
+    except Exception:
+        pass
+
+
 def main() -> None:
     args = parse_args()
+    apply_decoding_mode(args)
+    seed_everything(args.seed)
     is_gemini_model = args.model.lower().startswith("gemini-")
     if is_gemini_model and not args.gemini_native and not args.disable_tools:
         if os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"):
@@ -563,6 +657,7 @@ def main() -> None:
 
     agent = None
     parallel_tool_calls = None
+    agent_tools_dict = {}
     if use_direct:
         print("Tools disabled: using direct model calls for evaluation.")
     else:
@@ -576,7 +671,7 @@ def main() -> None:
                 log_dir, f"noise_manifest_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
             )
 
-        agent, _ = initialize_agent(
+        agent, agent_tools_dict = initialize_agent(
             args.prompt_file,
             tools_to_use=tools,
             model_dir=args.model_dir,
@@ -593,7 +688,73 @@ def main() -> None:
             noise_config=args.noise_config,
             noise_manifest_path=noise_manifest_path,
             capture_logprobs=args.capture_logprobs or None,
+            seed=args.seed,
         )
+
+    # ---- Stage 5 provenance: resolve the exposed tool_set + roles once ----
+    # These are constant for the run (the same environment is presented to every
+    # question). From the saved noise manifest when present (carries roles /
+    # distractor similarity), else the plain agent tool order (all REAL).
+    from ducx_noise import schema as ducx_schema
+
+    run_tool_set: List[str] = []
+    run_tool_roles: dict = {}
+    run_distractor_similarity = None
+    saved_manifest = locals().get("noise_manifest_path")
+    if saved_manifest and os.path.exists(saved_manifest):
+        try:
+            with open(saved_manifest) as _mh:
+                manifest_doc = json.load(_mh)
+            manifest_tools = manifest_doc.get("tools", [])
+            run_tool_set = [t["name"] for t in manifest_tools]
+            run_tool_roles = ducx_schema.tool_roles_from_manifest(manifest_tools)
+            dcfg = (manifest_doc.get("config") or {}).get("distractor") or {}
+            if dcfg.get("enabled"):
+                run_distractor_similarity = dcfg.get("similarity", "obvious")
+        except Exception as exc:
+            print(f"Warning: could not read noise manifest for schema: {exc}")
+    elif not use_direct:
+        run_tool_set = list(agent_tools_dict.keys())
+        run_tool_roles = {name: "REAL" for name in run_tool_set}
+    # use_direct (no_tool condition) -> empty tool_set, roles {}
+
+    run_id = os.path.splitext(os.path.basename(log_filename))[0]
+
+    from ducx_noise.metrics import extract_selected_tools as _selected_tools
+
+    def build_schema_fields(example, image_paths, response_text, predicted,
+                            is_correct, trace, direct_logprobs):
+        """Assemble the Stage-5 record fields for one question (merged into log)."""
+        # called tools: from the agent trace, or none in the no-tool/direct path
+        if trace:
+            called = _selected_tools({"trace": trace})
+        else:
+            called = []
+        # per-token logprobs of the final answer: agent trace, else direct call
+        per_token = ducx_schema.final_answer_logprobs_from_trace(trace) if trace else None
+        if per_token is None and direct_logprobs:
+            per_token = direct_logprobs
+        rec = ducx_schema.build_record(
+            sample_id=example.get("question_id", "unknown"),
+            query=example.get("question"),
+            image_ref=image_paths,
+            path=args.path,
+            condition=args.condition,
+            tool_set=run_tool_set,
+            tool_roles=run_tool_roles,
+            distractor_similarity=run_distractor_similarity,
+            raw_output=response_text,
+            called_tools=called,
+            final_answer=predicted,
+            is_correct=is_correct,
+            per_token_logprob=per_token,
+            seed=args.seed,
+            model_dtype=args.model_dtype,
+            decoding=args.decoding,
+            timestamp=datetime.now().isoformat(),
+            run_id=run_id,
+        )
+        return rec
 
     total = len(train_dataset)
     processed = 0
@@ -633,6 +794,7 @@ def main() -> None:
         message = build_message(example, image_paths)
         messages = [{"role": "user", "content": message}]
 
+        direct_logprobs = None
         try:
             if use_direct:
                 attempts = 0
@@ -653,7 +815,7 @@ def main() -> None:
                         response = direct_model.invoke([system_msg, user_msg])
                         response_text = getattr(response, "content", None)
                     else:
-                        response = parse_client.chat.completions.create(
+                        create_kwargs = dict(
                             model=args.model,
                             messages=[
                                 {
@@ -665,8 +827,14 @@ def main() -> None:
                             max_tokens=50,
                             temperature=args.temperature,
                             top_p=args.top_p,
+                            seed=args.seed,
                         )
+                        if args.capture_logprobs:
+                            create_kwargs["logprobs"] = True
+                            create_kwargs["top_logprobs"] = int(args.capture_logprobs)
+                        response = parse_client.chat.completions.create(**create_kwargs)
                         response_text = response.choices[0].message.content if response.choices else None
+                        direct_logprobs = _extract_direct_logprobs(response)
                     predicted = extract_choice(response_text or "")
                     if not predicted and args.llm_parse and parse_choice_fn:
                         predicted = parse_choice_fn(response_text)
@@ -703,6 +871,10 @@ def main() -> None:
                     "correct_answer": example.get("answer"),
                     "trace": trace,
                 }
+                log_entry.update(
+                    build_schema_fields(example, image_paths, response_text, predicted,
+                                        None, trace, direct_logprobs)
+                )
                 logger.info(json.dumps(log_entry))
                 print(f"Skipped question: {example.get('question_id', 'unknown')} (invalid answer)")
                 continue
@@ -728,6 +900,10 @@ def main() -> None:
                 "attempts": attempts,
                 "trace": trace,
             }
+            log_entry.update(
+                build_schema_fields(example, image_paths, response_text, predicted,
+                                    is_correct, trace, direct_logprobs)
+            )
             logger.info(json.dumps(log_entry))
             print(f"Progress: {processed}/{total}")
             print(f"Question ID: {example.get('question_id', 'unknown')}")

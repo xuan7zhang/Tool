@@ -31,8 +31,18 @@ class DistractorConfig:
     count: int = 0
     llm_generate: bool = False
     cache_path: str = "ducx_noise/cache/distractors.json"
-    style: str = "plausible"  # plausible | misleading
+    style: str = "plausible"  # plausible | misleading  (runtime RESPONSE style)
     tools: Optional[List[str]] = None  # real tools to imitate; None = all
+    # --- Stage 3: description-alignment tier -------------------------------
+    # obvious  -> description is clearly unrelated to any real tool.
+    # aligned  -> description mimics a specific real tool's wording/structure
+    #             (LLM-rewritten when a client is available; template fallback).
+    similarity: str = "obvious"  # obvious | aligned
+    # --- Stage 3: insertion position (used when tool_order != 'shuffle') ----
+    # head | tail | random | index  (with `index` giving the absolute slot when
+    # position == 'index'). Under tool_order='shuffle' position is irrelevant.
+    position: str = "tail"
+    index: int = 0
 
 
 @dataclass
@@ -126,6 +136,14 @@ class NoiseConfig:
 
     seed: int = 0
     shuffle_tools: bool = True  # shuffle final tool order (seeded) to avoid position cues
+    # Final tool ordering policy (Stage 3). None -> derived from `shuffle_tools`
+    # for backward compat (True->'shuffle', False->'fixed').
+    #   fixed      -> keep the real-tool order; distractors placed per position.
+    #   shuffle    -> seeded shuffle of the WHOLE list (decouples position from
+    #                 role so distractors never sit at a fixed slot).
+    #   controlled -> honor each distractor's explicit position/index; no shuffle
+    #                 (for the Task 5 position-ablation sweep).
+    tool_order: Optional[str] = None  # fixed | shuffle | controlled
     label: Optional[str] = None  # free-form label for sweeps / bookkeeping
     distractor: DistractorConfig = field(default_factory=DistractorConfig)
     unreliable: UnreliableConfig = field(default_factory=UnreliableConfig)
@@ -134,6 +152,14 @@ class NoiseConfig:
     schema_noise: SchemaConfig = field(default_factory=SchemaConfig)
     drop: DropConfig = field(default_factory=DropConfig)
     compose: ComposeConfig = field(default_factory=ComposeConfig)
+
+    @property
+    def resolved_tool_order(self) -> str:
+        """Effective ordering policy: explicit ``tool_order`` or derived from
+        the legacy ``shuffle_tools`` flag."""
+        if self.tool_order in ("fixed", "shuffle", "controlled"):
+            return self.tool_order
+        return "shuffle" if self.shuffle_tools else "fixed"
 
     @property
     def any_enabled(self) -> bool:
@@ -167,7 +193,7 @@ class NoiseConfig:
             "drop": DropConfig,
         }
         kwargs: Dict[str, Any] = {}
-        for key in ("seed", "shuffle_tools", "label"):
+        for key in ("seed", "shuffle_tools", "tool_order", "label"):
             if key in data:
                 kwargs[key] = data[key]
         for name, block_cls in block_types.items():
