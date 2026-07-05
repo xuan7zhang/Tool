@@ -105,15 +105,19 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--path",
-        choices=["tool_useless", "tool_useful_distractor"],
         default=None,
-        help="Experiment path label recorded in every Stage-5 record (Stage 4).",
+        help=(
+            "Free-form experiment path label recorded in every Stage-5 record "
+            "(e.g. tool_useless, tool_useful_distractor, multitool)."
+        ),
     )
     parser.add_argument(
         "--condition",
-        choices=["no_tool", "tool_only", "tool_useless", "tool_useful", "tool_useful_distractor"],
         default=None,
-        help="Experiment condition label recorded in every Stage-5 record (Stage 4).",
+        help=(
+            "Free-form experiment condition label recorded in every Stage-5 record "
+            "(e.g. no_tool, tool_only, oracle, all_real, all_real_distract)."
+        ),
     )
     parser.add_argument(
         "--capture-logprobs",

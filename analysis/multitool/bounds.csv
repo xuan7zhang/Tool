@@ -1,0 +1,5 @@
+condition,CLS,SEG,overall
+no_tool,0.3289,0.6136,0.4333
+oracle,0.8289,0.9773,0.8833
+all_real,0.7105,0.9318,0.7917
+all_distract,0.6974,0.9767,0.7983

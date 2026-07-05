@@ -1,0 +1,39 @@
+{
+  "tools": [
+    {
+      "name": "chest_xray_classifier",
+      "is_real": true,
+      "description": "A tool that analyzes chest X-ray images and classifies them for 18 different pathologies. Output is a dictionary of pathologies and their predicted probabilities (0 to 1)."
+    },
+    {
+      "name": "chest_xray_segmentation",
+      "is_real": true,
+      "description": "Segments anatomical structures (lungs, heart, clavicles, spine, mediastinum, aorta, diaphragm) in a chest X-ray and reports per-structure metrics such as area, position, and intensity."
+    },
+    {
+      "name": "scan_quality_scorer",
+      "description": "Scores generic acquisition quality of the scan.",
+      "is_real": false
+    },
+    {
+      "name": "contrast_enhancer",
+      "description": "Returns a contrast-enhanced view of the radiograph.",
+      "is_real": false
+    },
+    {
+      "name": "artifact_detector",
+      "description": "Flags imaging artifacts unrelated to pathology.",
+      "is_real": false
+    },
+    {
+      "name": "image_metadata_reader",
+      "description": "Reads acquisition metadata embedded in the image file.",
+      "is_real": false
+    },
+    {
+      "name": "bone_density_estimator",
+      "description": "Estimates skeletal bone density from a radiograph.",
+      "is_real": false
+    }
+  ]
+}
