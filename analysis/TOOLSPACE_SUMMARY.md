@@ -44,11 +44,23 @@ non-issues for this model.
 ## 1. Goal & reframing
 
 Ultimate goal: optimize the tool space presented to a VLM agent. The pivotal
-finding from the distractor study reframes it: the model **never mis-selects** a
-distractor, yet accuracy can drop because irrelevant tool descriptions **occupy
-context**. So tool-space optimization is a per-query **pruning / context-hygiene**
-problem, not a selection problem. Objective (this phase): pure task accuracy.
-Optimizer: training-free external retriever.
+finding from the distractor study reframes it: **on crisp tool-necessary tasks**
+the model never mis-selects a distractor (1 targeted call/q), yet accuracy can
+drop because irrelevant tool descriptions **occupy context**. (On open-ended
+tasks the model DOES mis-select — see the mis-selection note below.) So tool-space
+optimization is partly a per-query **pruning / context-hygiene** problem.
+Objective (this phase): pure task accuracy. Optimizer: training-free retriever.
+
+> **Mis-selection is task-dependent (important correction).** The "never
+> mis-selects" claim holds only for the probe task (calls/q≈1.00, 0% distractor
+> calls across n=875). On open-ended **ChestAgentBench** (full real toolset + 5
+> distractors, 500 q, prior run) the model explores 5.7→7.5 calls/q and
+> **mis-selects 38%** (sel_acc 1.00→0.62), yet task_acc barely moves
+> (0.648→0.658) because those questions are text-answerable. So pollution has TWO
+> channels: passive context-occupancy (probe task, hurts task_acc) and active
+> mis-selection (open task, high mis-select but little task_acc harm). calls/q —
+> driven by whether the task is tool-necessary with a unique answer — is the
+> mediating variable.
 
 ## 2. Infrastructure built (`ducx_noise/`, `analysis/`)
 
@@ -79,7 +91,9 @@ pathology", n=500/seed0):
   confounded with distractor identity (single seed).
 - **aligned not worse than obvious** (mixed) — "as-if-real" hypothesis rejected.
 - Position: modest ordered **primacy** (head 0.47 → tail 0.53).
-- **Model never selects a distractor (0/500)** → harm is context-occupancy.
+- **Model never selects a distractor (0/500) ON THIS PROBE TASK** (calls/q≈1) →
+  harm is context-occupancy. NOTE: on open-ended ChestAgentBench the model
+  mis-selects 38% (calls/q 5–7); the 0% is task-specific, not universal.
 
 ## 4. Multi-tool suite & oracle bounds (n=120)
 
@@ -148,10 +162,11 @@ polluted_K = classifier + segmentation + K distractors.
 - Retriever routes at **top1=1.0 even with 20 distractors**, so pruning to the one
   needed tool ≡ oracle and **recovers the full +0.14 (p=4e-5)**, training-free.
 
-This is the first powered evidence that external tool-space pruning helps: not
-because the model mis-selects (it never does), but because context pollution
-degrades reasoning once the toolbox is large enough. Plot:
-`analysis/multitool/pollution_recovery.png`.
+This is the first powered evidence that external tool-space pruning helps: on this
+probe task, not because the model mis-selects (here it never does — calls/q≈1),
+but because context pollution degrades reasoning once the toolbox is large enough.
+(On open-ended tasks a second channel — active mis-selection, 38% — coexists.)
+Plot: `analysis/multitool/pollution_recovery.png`.
 
 ---
 
@@ -193,7 +208,8 @@ caveat as routing.)
 | Gating beats always- AND never-tools | **robust** (+0.10 / +0.27, p<1e-3, n=379) |
 | Model calls a tool even when useless (text-answerable) | **robust** (99% call rate) |
 | Model routes to the right tool (lexical & self, ≤10 distractors) | **robust** |
-| Model never *selects* a distractor | **robust** |
+| Model never selects a distractor — **crisp probe task only** (calls/q≈1) | **robust** (0/875) |
+| Model mis-selects distractors on open-ended tasks (calls/q 5–7) | **robust** (38%, ChestAgentBench) |
 | 1 extra irrelevant *real* tool degrades accuracy (−0.09) | **RETRACTED** (n=300 p=1.0) |
 | Distractor *count* has a monotone dose-response | **rejected** (U-shaped) |
 | aligned distractors worse than obvious | **rejected** |
@@ -201,7 +217,7 @@ caveat as routing.)
 | Self-routing prompting helps | **rejected** (−0.27, it hurts) |
 | Pruning recovers accuracy — few distractors (K≤10) | null (n.s.) |
 | Pruning recovers accuracy — heavy pollution (K=20) | **robust** (+0.14, p=4e-5, paired) |
-| That harm is pure context-occupancy (not mis-selection) | **robust** (225/225 correct tool calls) |
+| On the probe task that harm is pure context-occupancy (not mis-selection) | **robust** (225/225 correct calls) |
 
 ## 9. Methodology notes
 
