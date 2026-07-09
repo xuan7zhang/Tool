@@ -1,0 +1,5 @@
+condition,qtype,n,AUC_msg_mean,AUC_msg_min,AUC_msg_last,AUC_perplexity
+with_tool,tool_necessary,200,0.803,0.456,0.878,0.803
+with_tool,text_answerable,200,0.549,0.476,0.516,0.549
+no_tool,tool_necessary,200,0.479,,,
+no_tool,text_answerable,200,0.664,,,
