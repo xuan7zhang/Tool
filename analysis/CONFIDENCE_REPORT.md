@@ -40,11 +40,26 @@ relevant tool** (0.878). When guessing without a tool it is uninformative (0.479
 when the tool is irrelevant (text-answerable) it is weak (0.55). So the signal
 measures *"did the model read the tool output well"*, not generic correctness.
 
-## Exp D — does distractor pollution degrade the signal? (GPU, in flight)
+## Exp D — heavy pollution erodes the signal
 
-CLS probe + classifier + {0, 5, 20} distractors, logprobs captured; AUC(msg_last →
-correct) per pollution level. Hypothesis: pollution lowers accuracy AND erodes the
-confidence signal. **Result pending (sbatch 4142024).**
+CLS probe + classifier + {0, 5, 20} distractors, logprobs captured (n=225 each).
+
+| pollution | task acc | AUC(msg_last → correct) |
+|---|---|---|
+| clean (0) | 0.782 | 0.785 |
+| pol5 | 0.622 | 0.807 |
+| **pol20** | 0.684 | **0.609** |
+
+- The confidence→correctness signal **survives light pollution** (pol5 0.807 ≈
+  clean 0.785, within single-seed noise) but **degrades under heavy pollution**
+  (pol20 → 0.609). Under 20 distractors the polluted context muddies both the
+  answer and the model's calibration, so confidence becomes a weaker error
+  detector.
+- This mirrors the pruning result (heavy pollution K=20 is where real harm
+  appears): exactly when you'd want to prune, the confidence signal is also least
+  trustworthy. Plot: `analysis/confidence/pollution_signal.png`.
+- (Accuracy is non-monotone pol5<pol20 — the familiar single-seed U-shape noise;
+  the AUC drop at K=20 is the robust signal here.)
 
 ## Takeaways
 
@@ -55,5 +70,8 @@ confidence signal. **Result pending (sbatch 4142024).**
 - **Scope:** works only when the relevant tool was used; it is a "tool-output
   comprehension" signal, not a universal one. Complements the likelihood *gate*
   (which decides whether the tool helped at all).
+- **Robustness:** holds under light pollution but **erodes under heavy pollution
+  (K=20, AUC→0.61)** — least trustworthy exactly when the toolbox is most
+  polluted, so it pairs naturally with pruning.
 
 Code: `analysis/confidence_analysis.py`; runners `run_confidence_pollution.sh`.

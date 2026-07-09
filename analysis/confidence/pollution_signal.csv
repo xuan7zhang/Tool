@@ -1,0 +1,4 @@
+pollution,n,accuracy,AUC_msg_last
+clean,225,0.7822,0.785
+pol5,225,0.6222,0.807
+pol20,225,0.6844,0.609
